@@ -153,6 +153,21 @@ async def predict(file: UploadFile = File(...)) -> PredictResponse:
     grade = int(probs.argmax())
     confidence = float(probs.max())
     ref_score = float(1 - probs[0] - probs[1])
+    abstain = confidence < 0.55
+
+    # audit + drift log: image hash only, never the image itself
+    try:
+        import hashlib
+        from .monitor import log_prediction
+        log_prediction({
+            "image_sha256": hashlib.sha256(raw).hexdigest(),
+            "predicted_grade": grade,
+            "confidence": round(confidence, 4),
+            "referable_score": round(ref_score, 4),
+            "abstain": bool(abstain),
+        })
+    except Exception:
+        pass  # monitoring must never break inference
 
     return PredictResponse(
         grade=grade,
@@ -162,7 +177,7 @@ async def predict(file: UploadFile = File(...)) -> PredictResponse:
         referable_score=round(ref_score, 4),
         threshold=C.THRESHOLD_REFERABLE,
         # low confidence -> service asks for human review instead of answering
-        abstain=confidence < 0.55,
+        abstain=abstain,
         model=_state["source"],
         latency_ms=round((time.time() - t0) * 1000, 1),
     )

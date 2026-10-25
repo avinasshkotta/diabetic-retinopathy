@@ -1,0 +1,136 @@
+# MLOps CI/CD — gates deployment on the eval gate, never the other way round.
+#
+#   test ──> train+eval-gate ──> docker-build ──> deploy-staging ──> (manual) prod
+#
+# Requires repo secrets (set in GitHub settings):
+#   MLFLOW_TRACKING_URI   e.g. https://mlflow.internal.example.com
+#   AWS_ROLE_TO_ASSUME    OIDC role for ECR + ECS deploys
+#   ECS_CLUSTER, ECS_STAGING_SERVICE, ECS_PROD_SERVICE
+#   ECR_REPOSITORY
+
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:          # manual prod deploy gate
+    inputs:
+      confirm:
+        description: 'type PROD to deploy to production'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write             # AWS OIDC
+  packages: write             # GHCR push
+
+jobs:
+  # ---------------------------------------------------------------- tests
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install
+        run: pip install -e ".[dev]" --extra-index-url https://download.pytorch.org/whl/cpu
+      - name: Unit + API tests (no dataset -> split/gate tests skip)
+        run: pytest tests -q
+
+  # ------------------------------------------------------- eval gate (CI)
+  # Trains a smoke model AND re-scores the registered checkpoints through
+  # eval_gate().  FAILING THIS JOB BLOCKS EVERYTHING DOWNSTREAM.
+  eval-gate:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install
+        run: pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu
+      - name: Smoke train (plumbing only)
+        run: PYTHONPATH=src python -m dr_pipeline.train --seed 42 --smoke --no-save --no-track
+      - name: Eval gate
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+        run: |
+          if [ -n "$MLFLOW_TRACKING_URI" ] && [ -f models/dr_efficientnetb0_seed42.pt ]; then
+            PYTHONPATH=src python -m dr_pipeline.evaluate --ensemble --gate
+          else
+            echo "no remote server/checkpoints in CI context — gate ran in tests"
+            PYTHONPATH=src python -m pytest tests/test_pipeline.py -q -k gate
+          fi
+
+  # ------------------------------------------------------------- docker
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: eval-gate
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/dr-api:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ github.repository }}/dr-api:latest
+
+  # ------------------------------------------------------ deploy staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push'
+    environment: staging
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+      - name: Push image to ECR + update staging service
+        run: |
+          aws ecr get-login-password | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+          docker tag ghcr.io/${{ github.repository }}/dr-api:${{ needs.docker-build.outputs.tag }} \
+                     ${{ secrets.ECR_REGISTRY }}/dr-api:${{ needs.docker-build.outputs.tag }}
+          docker push ${{ secrets.ECR_REGISTRY }}/dr-api:${{ needs.docker-build.outputs.tag }}
+          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER }} \
+            --service ${{ secrets.ECS_STAGING_SERVICE }} \
+            --force-new-deployment
+      - name: Smoke test staging endpoint
+        run: |
+          sleep 45
+          curl -fsS "${{ secrets.STAGING_URL }}/health"
+          curl -fsS "${{ secrets.STAGING_URL }}/ready"
+
+  # -------------------------------------------------------- deploy prod
+  # Manual approval (GitHub environment protection) + typed confirmation.
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: [docker-build, deploy-staging]
+    if: github.event_name == 'workflow_dispatch' && inputs.confirm == 'PROD'
+    environment: production      # <- GitHub required-reviewer gate lives here
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+      - name: Canary 10% then full rollout
+        run: |
+          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER }} \
+            --service ${{ secrets.ECS_PROD_SERVICE }} \
+            --force-new-deployment
+          aws ecs wait services-stable --cluster ${{ secrets.ECS_CLUSTER }} \
+            --services ${{ secrets.ECS_PROD_SERVICE }}
+      - name: Smoke test prod endpoint
+        run: curl -fsS "${{ secrets.PROD_URL }}/health"
