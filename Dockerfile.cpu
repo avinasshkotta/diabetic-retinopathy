@@ -1,0 +1,36 @@
+# CPU-only runtime image for AWS free tier (t2.micro: 1 vCPU / 1 GB / 30 GB).
+# Same app as Dockerfile, but torch from the CPU wheel index -> ~3 GB total
+# instead of 12.4 GB (CUDA libraries are what bloat the GPU image).
+#
+#   docker build -f Dockerfile.cpu -t dr-api:cpu .
+#
+FROM python:3.12-slim AS builder
+WORKDIR /build
+COPY requirements-cpu.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements-cpu.txt
+
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 libglib2.0-0 curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home appuser
+
+COPY --from=builder /install /usr/local
+WORKDIR /app
+COPY src/ src/
+COPY pyproject.toml .
+COPY models/ models/
+
+# free tier has 1 GB RAM — serve the single seed model by default
+# (set DR_SEEDS=42,123,777 on bigger instances to enable the ensemble)
+ENV PYTHONPATH=/app/src \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080 \
+    DR_SEEDS=42
+
+USER appuser
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
+    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+
+CMD ["sh", "-c", "uvicorn dr_pipeline.serving:app --host 0.0.0.0 --port ${PORT}"]

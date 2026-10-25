@@ -1,0 +1,17 @@
+# CPU-only deps (free-tier t2.micro / any x86 server without GPU)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+torchvision==0.29.1+cpu
+
+numpy==2.3.4
+pandas==2.3.3
+scikit-learn==1.7.2
+opencv-python-headless==5.0.0.93
+pillow==12.0.0
+
+# serving (no mlflow in prod image by default — set MODEL_URI empty and use
+# baked weights; mlflow only needed if you run a remote registry in AWS)
+fastapi==0.162.0
+uvicorn
+python-multipart
+httpx

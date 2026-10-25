@@ -51,11 +51,20 @@ class RegistryEnsemble:
 
 
 class LocalEnsemble:
-    """Wraps the local .pt seed checkpoints (dev fallback, no server needed)."""
+    """Wraps the local .pt seed checkpoints (dev fallback, no server needed).
+
+    DR_SEEDS env var selects which seeds to load (comma-separated).
+    Free-tier instances have 1 GB RAM -> default is single-seed there;
+    locally/defaults follow config.SEEDS (full 3-model ensemble).
+    """
 
     def __init__(self):
+        import os
         from .predict import DREnsemble
-        self.inner = DREnsemble()
+        seeds_env = os.environ.get("DR_SEEDS", "")
+        seeds = (tuple(int(s) for s in seeds_env.split(",")) if seeds_env
+                 else C.SEEDS)
+        self.inner = DREnsemble(seeds=seeds)
 
     def predict_probs(self, x: np.ndarray) -> np.ndarray:
         import torch

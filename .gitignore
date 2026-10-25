@@ -30,3 +30,7 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# --- deploy secrets/artifacts (never commit) ---
+*.pem
+dr-api-cpu.tar
