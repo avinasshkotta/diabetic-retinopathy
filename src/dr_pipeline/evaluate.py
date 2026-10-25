@@ -31,6 +31,24 @@ def load_checkpoint(path) -> torch.nn.Module:
     return m
 
 
+class EnsembleModule(torch.nn.Module):
+    """Deployable wrapper: normalised NCHW tensor -> grade probabilities.
+
+    Averages the *sigmoid* outputs of the seed models (identical maths to
+    evaluate()'s ensemble path).  Preprocessing (decode/resize/normalise)
+    happens outside — in predict.preprocess / the FastAPI service.
+    Served as the 'model' artifact that promote registers.
+    """
+
+    def __init__(self, models: list[torch.nn.Module]):
+        super().__init__()
+        self.models = torch.nn.ModuleList(models)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.stack(
+            [torch.sigmoid(m(x)) for m in self.models]).mean(dim=0)
+
+
 def evaluate(models: list[torch.nn.Module]) -> dict:
     """Full test-set evaluation of one model or an ensemble."""
     test_df = load_split("test")
@@ -99,6 +117,8 @@ def main() -> None:
                    help="average all 3 registered seed checkpoints")
     ap.add_argument("--gate", action="store_true",
                     help="exit 1 if eval_gate fails (CI mode)")
+    ap.add_argument("--no-track", action="store_true",
+                    help="skip MLflow logging (offline use only)")
     args = ap.parse_args()
 
     if args.ensemble:
@@ -124,6 +144,51 @@ def main() -> None:
     print(f"report          : {C.REPORTS_DIR / 'evaluation.json'}")
 
     ok, failures = eval_gate(metrics)
+
+    # --- MLflow: record the evaluation + gate decision on the run(s) ----
+    if not args.no_track:
+        import mlflow
+        from . import tracking
+        tracking.configure()
+        if not tracking.server_reachable():
+            sys.exit(f"MLflow server unreachable at {tracking.DEFAULT_URI} — "
+                     f"start it or pass --no-track")
+        run_name = "ensemble-eval" if args.ensemble else "eval"
+        with mlflow.start_run(run_name=run_name) as run:
+            mlflow.set_tag("kind", "evaluation")
+            mlflow.set_tags({
+                "checkpoints": "ensemble" if args.ensemble else args.checkpoint,
+                "gate": "PASS" if ok else "FAIL",
+                "gate_failures": "; ".join(failures),
+                "n_models": len(models),
+            })
+            flat = {k: float(v) for k, v in metrics.items()
+                    if isinstance(v, (int, float))}
+            flat.update({f"auc_grade_{g}": v
+                         for g, v in metrics["per_grade_auc"].items()})
+            mlflow.log_metrics(flat)
+            mlflow.log_artifact(str(C.REPORTS_DIR / "evaluation.json"))
+            # raw checkpoints kept for traceability ...
+            if args.ensemble:
+                for s in C.SEEDS:
+                    mlflow.log_artifact(
+                        str(C.MODELS_DIR / f"dr_efficientnetb0_seed{s}.pt"),
+                        artifact_path="checkpoints")
+                # ... but the registry source is a *logged model* so that
+                # mlflow.pyfunc/pytorch.load_model works on 'production'.
+                import mlflow.pytorch
+                import numpy as np
+                module = EnsembleModule(models).cpu().eval()
+                example = np.random.randn(1, 3, *C.IMG_SIZE).astype("float32")
+                mlflow.pytorch.log_model(
+                    module, name="model",
+                    input_example=example,
+                    # pt2 (torch.export) breaks CPU->CUDA loading; classic
+                    # pickle serialization loads on any device via map_location
+                    serialization_format="pickle",
+                )
+            print(f"mlflow run      : {run.info.run_id}")
+
     if args.gate:
         if ok:
             print("GATE: PASS — model may be promoted")

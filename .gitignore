@@ -8,8 +8,13 @@ data/raw/**
 models/*.pt
 
 # --- generated (regenerable) ---
-data/gold/
+# NOTE: data/gold/splits is deliberately NOT ignored — the frozen split
+# manifests are committed so the test-set guarantee survives machine changes.
 reports/
+
+# --- mlflow (server data; regenerated, never committed) ---
+mlflow.db
+mlartifacts/
 mlruns/
 
 # --- python ---

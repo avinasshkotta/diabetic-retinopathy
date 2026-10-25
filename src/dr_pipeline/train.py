@@ -13,7 +13,9 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 import time
+from contextlib import nullcontext
 
 import numpy as np
 import pandas as pd
@@ -153,6 +155,8 @@ def main() -> None:
                     help="tiny run (60 imgs, 1+1 epochs) for CI plumbing tests")
     ap.add_argument("--no-save", action="store_true",
                     help="do not write weights/metrics (dry run)")
+    ap.add_argument("--no-track", action="store_true",
+                    help="skip MLflow (offline use only — CI must track)")
     args = ap.parse_args()
 
     if args.smoke:
@@ -160,6 +164,17 @@ def main() -> None:
         limit = 60
     else:
         epochs_f1, epochs_f2, limit = C.EPOCHS_F1, C.EPOCHS_F2, None
+
+    # --- MLflow: one run per seed -------------------------------------
+    import mlflow
+    from . import tracking
+
+    track = not args.no_track
+    if track:
+        tracking.configure()
+        if not tracking.server_reachable():
+            sys.exit(f"MLflow server unreachable at {tracking.DEFAULT_URI} — "
+                     f"start it (see tracking.py docstring) or pass --no-track")
 
     seeds = list(C.SEEDS) if args.all_seeds else [args.seed]
     train_df, val_df = load_split("train"), load_split("val")
@@ -169,8 +184,29 @@ def main() -> None:
           f"epochs={epochs_f1}+{epochs_f2}{' SMOKE' if args.smoke else ''}")
     t0 = time.time()
     for s in seeds:
-        train_one_seed(s, train_df, val_df, epochs_f1, epochs_f2,
-                       limit=limit, save=not args.no_save)
+        params = {"seed": s, "epochs_f1": epochs_f1, "epochs_f2": epochs_f2,
+                  "lr1": C.LR1, "lr2": C.LR2, "batch": C.BATCH,
+                  "img_size": list(C.IMG_SIZE), "smoke": args.smoke,
+                  "n_train": len(train_df), "n_val": len(val_df),
+                  "model": "efficientnet_b0", "seeds": list(C.SEEDS)}
+        ctx = (mlflow.start_run(run_name=f"seed-{s}")
+               if track else nullcontext())
+        with ctx:
+            if track:
+                mlflow.set_tag("kind", "training")
+                mlflow.log_params(params)
+            model, metrics = train_one_seed(
+                s, train_df, val_df, epochs_f1, epochs_f2,
+                limit=limit, save=not args.no_save)
+            if track:
+                mlflow.log_metrics({"val_auc": metrics["val_auc"]})
+                if not args.no_save:
+                    # checkpoint + sidecar as run artifacts -> registry source
+                    mlflow.log_artifact(
+                        str(C.MODELS_DIR / f"dr_efficientnetb0_seed{s}.pt"),
+                        artifact_path="model")
+                    mlflow.log_artifact(
+                        str(C.REPORTS_DIR / f"seed{s}.json"))
     print(f"done in {(time.time() - t0) / 60:.1f} min")
 
 
