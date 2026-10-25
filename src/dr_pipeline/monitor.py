@@ -47,9 +47,13 @@ def load_predictions(days: int = 7) -> pd.DataFrame:
 
 
 def drift_report(days: int = 7) -> dict:
-    """Evidently dataset-drift + confidence check on the recent window."""
-    from evidently.metric_preset import DataDriftPreset
-    from evidently.report import Report
+    """Evidently dataset-drift + confidence check on the recent window.
+
+    Uses evidently.legacy (the stable Report API in 0.7.x; the new
+    presets API does not yet expose a results payload).
+    """
+    from evidently.legacy.metric_preset import DataDriftPreset
+    from evidently.legacy.report import Report
 
     recent = load_predictions(days)
     if len(recent) < 50:
@@ -61,9 +65,7 @@ def drift_report(days: int = 7) -> dict:
 
     report = Report(metrics=[DataDriftPreset()])
     report.run(reference_data=ref, current_data=cur)
-    result = report.as_dict()
-
-    share = result["metrics"][0]["result"]["share_of_drifted_columns"]
+    share = _share_drifted(report)
     conf_mean = float(recent["confidence"].mean())
     abstain_rate = float(recent["abstain"].mean())
 
@@ -85,6 +87,30 @@ def drift_report(days: int = 7) -> dict:
     C.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     DRIFT_REPORT.write_text(json.dumps(report_obj, indent=2))
     return report_obj
+
+
+def _share_drifted(report) -> float:
+    """Pull share_of_drifted_columns out of the legacy Report payload,
+    walking the dict (nesting has shifted across evidently versions)."""
+    payload = report.as_dict()
+    found: list[float] = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "share_of_drifted_columns" and isinstance(v, (int, float)):
+                    found.append(float(v))
+                else:
+                    walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(payload)
+    if not found:
+        raise RuntimeError("could not locate share_of_drifted_columns in "
+                           "Evidently report payload")
+    return found[0]
 
 
 def load_split_train() -> pd.DataFrame:

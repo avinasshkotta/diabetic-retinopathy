@@ -45,11 +45,25 @@ pytest tests -q
 
 ## Roadmap (mentor's diagram)
 
-- [x] Feature engineering → gold layer
-- [ ] Step 2: MLflow experiment tracking + model registry
-- [ ] Step 3: FastAPI endpoint
-- [ ] Step 4: Docker container
-- [ ] Step 5: GitHub Actions CI/CD
-- [ ] Step 6: AWS ECS / Kubernetes
-- [ ] Step 7: Evidently drift monitor + HITL gate
-- [ ] Step 8: retrain trigger
+- [x] Feature engineering → gold layer (frozen split manifests)
+- [x] MLflow experiment tracking (train/eval runs, gate tags)
+- [x] MLflow model registry (`dr-effnetb0`, gated `production` alias)
+- [x] FastAPI endpoint (`/health /ready /model /predict`)
+- [x] Docker container (multi-stage, non-root, healthcheck)
+- [x] GitHub Actions CI/CD (test → eval-gate → image → staging → manual prod)
+- [x] AWS ECS (task definition + `scripts/deploy.ps1`; canary via service rollout)
+- [x] Evidently drift monitor + HITL gate (`monitor.py`, abstain routing)
+- [x] Retrain trigger (`retrain.py`: drift / reviewed-labels / schedule)
+
+### Local services
+
+```bash
+# mlflow (port 5001 — Windows reserves 5000)
+py -m mlflow server --backend-store-uri sqlite:///mlflow.db \
+    --default-artifact-root mlartifacts --host 127.0.0.1 --port 5001
+# API
+$env:PYTHONPATH="src"; py -m uvicorn dr_pipeline.serving:app --port 8080
+# registry-backed serving
+$env:MLFLOW_TRACKING_URI="http://127.0.0.1:5001"
+$env:MODEL_URI="models:/dr-effnetb0@production"
+```
