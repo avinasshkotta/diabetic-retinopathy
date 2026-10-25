@@ -1,4 +1,4 @@
-# AWS free-tier deploy: EC2 t2.micro (1 vCPU / 1 GB / 30 GB, 750 hrs/mo free)
+﻿# AWS free-tier deploy: EC2 t2.micro (1 vCPU / 1 GB / 30 GB, 750 hrs/mo free)
 #
 # ONE-TIME local prep:
 #   docker build -f Dockerfile.cpu -t dr-api:cpu .
@@ -25,7 +25,7 @@ for ($i = 0; $i -lt 30; $i++) {
     if ($LASTEXITCODE -eq 0) { $up = $true; break }
     Start-Sleep -Seconds 5
 }
-if (-not $up) { throw "SSH never became reachable — check SG port 22 + key path" }
+if (-not $up) { throw "SSH never became reachable - check SG port 22 + key path" }
 
 $cmds = @(
     'sudo dnf -y install docker > /dev/null 2>&1 || sudo yum -y install docker',
@@ -36,18 +36,22 @@ foreach ($c in $cmds) {
     ssh -i $Key "$User@$PublicIp" $c
 }
 
-Write-Host "==> transferring image (~3 GB, one time, LAN/WAN dependent)..."
-scp -i $Key dr-api-cpu.tar "${User}@${PublicIp}:`$HOME/"
+Write-Host "==> transferring image (0.56 GB, one time)..."
+# NOTE: NOT /tmp - on AL2023 /tmp is a small RAM tmpfs (457 MB), too small for the tar
+scp -i $Key dr-api-cpu.tar "${User}@${PublicIp}:/home/${User}/dr-api-cpu.tar"
+if ($LASTEXITCODE -ne 0) { throw "image transfer failed" }
 
 Write-Host "==> loading + running container..."
 ssh -i $Key "$User@$PublicIp" @"
-docker load -i `$HOME/dr-api-cpu.tar
-docker rm -f dr-api 2>/dev/null
-docker run -d --restart unless-stopped --name dr-api -p 80:8080 dr-api:cpu
+sudo docker load -i /home/$User/dr-api-cpu.tar
+sudo docker rm -f dr-api 2>/dev/null
+sudo docker run -d --restart unless-stopped --name dr-api -p 80:8080 dr-api:cpu
+rm /home/$User/dr-api-cpu.tar
 sleep 8
 curl -fsS http://127.0.0.1:8080/health && echo
 curl -fsS http://127.0.0.1:8080/ready && echo
 "@
+if ($LASTEXITCODE -ne 0) { throw "container failed health check" }
 
 Write-Host ""
 Write-Host "LIVE: http://$PublicIp/" -ForegroundColor Green
