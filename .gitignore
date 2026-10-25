@@ -1,0 +1,27 @@
+# --- data (8 GB, linked via data/raw junction, never committed) ---
+data/raw/
+data/raw/**
+*.png
+*.jpg
+
+# --- trained weights (16 MB each; artifact storage comes in Step 2) ---
+models/*.pt
+
+# --- generated (regenerable) ---
+data/gold/
+reports/
+mlruns/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- editors / os ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

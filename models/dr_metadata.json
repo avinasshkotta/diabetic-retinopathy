@@ -1,0 +1,28 @@
+{
+  "framework": "pytorch",
+  "threshold_referable": 0.3536784052848816,
+  "seeds": [
+    42,
+    123,
+    777
+  ],
+  "ensemble_test_auc": 0.8821405889612588,
+  "single_model_aucs": [
+    0.8790509869492726,
+    0.8821547025670833,
+    0.8825884852119288
+  ],
+  "device_used": "cuda",
+  "img_size": [
+    224,
+    224
+  ],
+  "batch": 32,
+  "epochs": [
+    8,
+    4
+  ],
+  "amp": true,
+  "n_train": 2196,
+  "n_test": 733
+}
