@@ -37,7 +37,7 @@ foreach ($c in $cmds) {
 }
 
 Write-Host "==> transferring image (~3 GB, one time, LAN/WAN dependent)..."
-scp -i $Key dr-api-cpu.tar "${User}:`$HOME/"
+scp -i $Key dr-api-cpu.tar "${User}@${PublicIp}:`$HOME/"
 
 Write-Host "==> loading + running container..."
 ssh -i $Key "$User@$PublicIp" @"
