@@ -18,7 +18,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+# dev = everything the test suite touches (serving tests use TestClient -> httpx,
+# multipart uploads -> python-multipart); CI installs -e ".[dev]"
+dev = [
+    "pytest>=8",
+    "fastapi>=0.115",
+    "uvicorn",
+    "python-multipart",
+    "httpx",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
