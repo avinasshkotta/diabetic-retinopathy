@@ -42,18 +42,22 @@ scp -i $Key dr-api-cpu.tar "${User}@${PublicIp}:/home/${User}/dr-api-cpu.tar"
 if ($LASTEXITCODE -ne 0) { throw "image transfer failed" }
 
 Write-Host "==> loading + running container..."
-ssh -i $Key "$User@$PublicIp" @"
-sudo docker load -i /home/$User/dr-api-cpu.tar
+# NOTE: single-quoted here-string -> PowerShell expands NOTHING; every $ below
+# is interpreted by the REMOTE bash (that is what we want).
+ssh -i $Key "$User@$PublicIp" @'
+sudo docker load -i ~/dr-api-cpu.tar
 sudo docker rm -f dr-api 2>/dev/null
 sudo docker run -d --restart unless-stopped --name dr-api -p 80:8080 dr-api:cpu
-rm -f /home/$User/dr-api-cpu.tar
-for i in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:8080/ready > /dev/null 2>&1; then break; fi
+rm -f ~/dr-api-cpu.tar
+n=0
+until curl -fsS http://127.0.0.1:8080/ready > /dev/null 2>&1; do
+  n=$((n + 1))
+  [ "$n" -ge 30 ] && break
   sleep 2
 done
 curl -fsS http://127.0.0.1:8080/health && echo
 curl -fsS http://127.0.0.1:8080/ready && echo
-"@
+'@
 if ($LASTEXITCODE -ne 0) { throw "container failed health check" }
 
 Write-Host ""

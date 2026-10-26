@@ -5,6 +5,10 @@
 **Live API:** http://54.252.251.126/ · Swagger UI: http://54.252.251.126/docs
 (AWS free-tier t2/t3 micro, Docker, CPU image — see `README-aws.md`)
 
+📖 **New here? Read [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md)** — the whole
+process start to finish: architecture, every stage, the two core flows
+(request + retrain), a 2-minute demo script, and what each file does.
+
 Production-oriented repo for the DR grading model (EfficientNet-B0, 3-seed
 ensemble, APTOS-2019).  Research notebook lives in the original PyCharm
 folder; this repo is the pipeline.
