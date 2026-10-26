@@ -21,11 +21,33 @@ import time
 
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import config as C
 
-app = FastAPI(title="dr-grading", version="1.0.0")
+app = FastAPI(
+    title="Diabetic Retinopathy Grading API",
+    version="1.0.0",
+    description=(
+        "Screens a retinal (fundus) photograph for diabetic retinopathy (DR).\n\n"
+        "**How to use:** expand `POST /predict` → `Try it out` → `Choose file` "
+        "(any fundus photo) → `Execute`.\n\n"
+        "**Response fields:**\n"
+        "- `grade` — predicted severity: 0 = no DR, 1 = mild, 2 = moderate, "
+        "3 = severe, 4 = proliferative\n"
+        "- `probs` — model probability for each grade [0..4], sums to 1\n"
+        "- `confidence` — the highest of those probabilities (model certainty)\n"
+        "- `referable_score` — P(grade >= 2): chance the case needs a specialist\n"
+        "- `referable` — clinical decision: `referable_score >= threshold` "
+        "→ refer to an ophthalmologist\n"
+        "- `threshold` — frozen referral cutoff (0.3537), enforced by the eval gate\n"
+        "- `abstain` — `true` when confidence < 0.55: the model refuses to answer "
+        "and routes the case to human review (HITL)\n"
+        "- `model` — which model/registry version answered\n"
+        "- `latency_ms` — server-side inference time\n\n"
+        "Screening aid only — not a diagnosis."
+    ),
+)
 
 # --------------------------------------------------------------------------
 # model loading (once, at startup)
@@ -100,11 +122,13 @@ def startup() -> None:
 # --------------------------------------------------------------------------
 @app.get("/health")
 def health() -> dict:
+    """Liveness: the process is up. Never depends on the model."""
     return {"status": "ok"}
 
 
 @app.get("/ready")
 def ready() -> dict:
+    """Readiness: the model is loaded and can serve. 503 while loading or if loading failed."""
     if _state["model"] is None:
         raise HTTPException(503, detail=f"model not loaded: {_state['source']}")
     return {"ready": True, "model": _state["source"]}
@@ -112,24 +136,34 @@ def ready() -> dict:
 
 @app.get("/model")
 def model_info() -> dict:
+    """Which model/source is serving and which referral threshold it uses."""
     return {"source": _state["source"], "loaded_at": _state["loaded_at"],
             "threshold": C.THRESHOLD_REFERABLE}
 
 
 class PredictResponse(BaseModel):
-    grade: int
-    confidence: float
-    probs: list[float]
-    referable: bool
-    referable_score: float
-    threshold: float
-    abstain: bool
-    model: str
-    latency_ms: float
+    grade: int = Field(description="Predicted DR severity: 0=none, 1=mild, "
+                                   "2=moderate, 3=severe, 4=proliferative")
+    confidence: float = Field(description="Highest class probability — how "
+                                          "certain the model is (0..1)")
+    probs: list[float] = Field(description="Probability per grade [0,1,2,3,4], "
+                                           "sums to 1")
+    referable: bool = Field(description="Clinical decision: needs specialist "
+                                        "referral (referable_score >= threshold)")
+    referable_score: float = Field(description="P(grade >= 2) = 1 - P(0) - P(1); "
+                                               "the chance of referable disease")
+    threshold: float = Field(description="Frozen referral threshold (0.3537) "
+                                         "enforced by the eval gate")
+    abstain: bool = Field(description="true = confidence < 0.55, routed to human "
+                                      "review (HITL) instead of an answer")
+    model: str = Field(description="Which model / registry version answered")
+    latency_ms: float = Field(description="Server-side inference time")
 
 
 @app.post("/predict", response_model=PredictResponse)
 async def predict(file: UploadFile = File(...)) -> PredictResponse:
+    """Grade a fundus photograph (multipart file upload) -> DR severity,
+    referral decision, and abstain/HITL flag."""
     # validate the upload FIRST (cheap, model-independent) so clients get a
     # precise 4xx even while the model is still loading; 503 only for the
     # actual inference path.
