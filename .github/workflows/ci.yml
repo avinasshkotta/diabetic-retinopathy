@@ -82,23 +82,40 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.cpu       # the image we actually deploy (CPU, 2.5 GB)
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/dr-api:${{ steps.meta.outputs.tag }}
             ghcr.io/${{ github.repository }}/dr-api:latest
 
   # ------------------------------------------------------ deploy staging
+  # Skips cleanly when AWS secrets are not configured (EC2 is the live target;
+  # flip this on by adding AWS_ROLE_TO_ASSUME + friends to repo secrets).
   deploy-staging:
     runs-on: ubuntu-latest
     needs: docker-build
     if: github.event_name == 'push'
     environment: staging
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Check deploy credentials
+        id: check
+        env:
+          ROLE: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        run: |
+          if [ -n "$ROLE" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS secrets not configured - skipping staging deploy (live target: EC2)"
+          fi
+      - name: Configure AWS credentials
+        if: steps.check.outputs.enabled == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1
       - name: Push image to ECR + update staging service
+        if: steps.check.outputs.enabled == 'true'
         run: |
           aws ecr get-login-password | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
           docker tag ghcr.io/${{ github.repository }}/dr-api:${{ needs.docker-build.outputs.tag }} \
@@ -108,6 +125,7 @@ jobs:
             --service ${{ secrets.ECS_STAGING_SERVICE }} \
             --force-new-deployment
       - name: Smoke test staging endpoint
+        if: steps.check.outputs.enabled == 'true'
         run: |
           sleep 45
           curl -fsS "${{ secrets.STAGING_URL }}/health"
@@ -117,15 +135,31 @@ jobs:
   # Manual approval (GitHub environment protection) + typed confirmation.
   deploy-prod:
     runs-on: ubuntu-latest
-    needs: [docker-build, deploy-staging]
+    # NOTE: needs only docker-build — deploy-staging is push-only and would be
+    # "skipped" on dispatch, which silently skips any job that needs it.
+    needs: [docker-build]
     if: github.event_name == 'workflow_dispatch' && inputs.confirm == 'PROD'
     environment: production      # <- GitHub required-reviewer gate lives here
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Check deploy credentials
+        id: check
+        env:
+          ROLE: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        run: |
+          if [ -n "$ROLE" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS secrets not configured - prod deploy skipped"
+          fi
+      - name: Configure AWS credentials
+        if: steps.check.outputs.enabled == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1
       - name: Canary 10% then full rollout
+        if: steps.check.outputs.enabled == 'true'
         run: |
           aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER }} \
             --service ${{ secrets.ECS_PROD_SERVICE }} \
@@ -133,4 +167,5 @@ jobs:
           aws ecs wait services-stable --cluster ${{ secrets.ECS_CLUSTER }} \
             --services ${{ secrets.ECS_PROD_SERVICE }}
       - name: Smoke test prod endpoint
+        if: steps.check.outputs.enabled == 'true'
         run: curl -fsS "${{ secrets.PROD_URL }}/health"
