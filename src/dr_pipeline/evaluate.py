@@ -25,7 +25,7 @@ from .train import DEVICE, auc_of, predict, make_model
 
 
 def load_checkpoint(path) -> torch.nn.Module:
-    m = make_model()
+    m = make_model(pretrained=False)  # weights come from the checkpoint
     m.load_state_dict(torch.load(path, map_location=DEVICE, weights_only=True))
     m.eval()
     return m

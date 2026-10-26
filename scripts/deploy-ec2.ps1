@@ -46,8 +46,11 @@ ssh -i $Key "$User@$PublicIp" @"
 sudo docker load -i /home/$User/dr-api-cpu.tar
 sudo docker rm -f dr-api 2>/dev/null
 sudo docker run -d --restart unless-stopped --name dr-api -p 80:8080 dr-api:cpu
-rm /home/$User/dr-api-cpu.tar
-sleep 8
+rm -f /home/$User/dr-api-cpu.tar
+for i in $(seq 1 30); do
+  if curl -fsS http://127.0.0.1:8080/ready > /dev/null 2>&1; then break; fi
+  sleep 2
+done
 curl -fsS http://127.0.0.1:8080/health && echo
 curl -fsS http://127.0.0.1:8080/ready && echo
 "@

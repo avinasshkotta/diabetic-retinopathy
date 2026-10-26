@@ -44,8 +44,11 @@ def set_seed(s: int) -> None:
     torch.cuda.manual_seed_all(s)
 
 
-def make_model() -> nn.Module:
-    m = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1)
+def make_model(pretrained: bool = True) -> nn.Module:
+    # pretrained=False is for serving: the checkpoint overwrites every weight,
+    # so downloading ImageNet weights would only slow startup + need network.
+    w = (models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
+    m = models.efficientnet_b0(weights=w)
     m.classifier[1] = nn.Linear(m.classifier[1].in_features, C.N_GRADES)
     return m.to(DEVICE)
 
