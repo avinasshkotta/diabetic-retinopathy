@@ -145,6 +145,44 @@ def train_one_seed(seed: int, train_df: pd.DataFrame, val_df: pd.DataFrame,
     return model, metrics
 
 
+def _dataset_present() -> bool:
+    """True when the 8 GB dataset is linked (data/raw) — probed, never hard-exit."""
+    f = C.SPLIT_DIR / "train.csv"
+    if not f.exists():
+        return False
+    import pandas as pd
+    probe = pd.read_csv(f).iloc[0]
+    return (C.IMG_DIR / f"{probe['id_code']}.png").exists()
+
+
+def _smoke_frames(n_train: int = 60, n_val: int = 20):
+    """Synthetic images for --smoke on machines without the dataset (CI).
+
+    Exercises the real path: DRDataset -> DataLoader -> model -> loss ->
+    backward, just with random pixels instead of fundus photos.
+    """
+    import tempfile
+    from pathlib import Path
+
+    import cv2
+    import numpy as np
+    import pandas as pd
+
+    tmp = Path(tempfile.mkdtemp(prefix="dr_smoke_"))
+
+    def make(n: int, offset: int) -> pd.DataFrame:
+        rows = []
+        for i in range(n):
+            p = tmp / f"smoke_{offset + i}.png"
+            cv2.imwrite(str(p),
+                        np.random.randint(0, 255, (224, 224, 3), np.uint8))
+            rows.append({"id_code": p.stem, "grade": (offset + i) % C.N_GRADES,
+                         "path": str(p)})
+        return pd.DataFrame(rows)
+
+    return make(n_train, 0), make(n_val, 1000)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="dr_pipeline.train")
     g = ap.add_mutually_exclusive_group(required=True)
@@ -177,7 +215,12 @@ def main() -> None:
                      f"start it (see tracking.py docstring) or pass --no-track")
 
     seeds = list(C.SEEDS) if args.all_seeds else [args.seed]
-    train_df, val_df = load_split("train"), load_split("val")
+    if args.smoke and not _dataset_present():
+        print("SMOKE: dataset not linked on this machine — synthetic images "
+              "(CI plumbing mode: full data->model->backward path)")
+        train_df, val_df = _smoke_frames()
+    else:
+        train_df, val_df = load_split("train"), load_split("val")
 
     print(f"device={DEVICE} amp={AMP} | train={len(train_df)} "
           f"val={len(val_df)} | seeds={seeds} | "
