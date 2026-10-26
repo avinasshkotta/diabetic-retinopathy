@@ -1,5 +1,10 @@
 # diabetic-retinopathy — MLOps pipeline
 
+[![ci-cd](https://github.com/avinasshkotta/diabetic-retinopathy/actions/workflows/ci.yml/badge.svg)](https://github.com/avinasshkotta/diabetic-retinopathy/actions/workflows/ci.yml)
+
+**Live API:** http://54.252.251.126/ · Swagger UI: http://54.252.251.126/docs
+(AWS free-tier t2/t3 micro, Docker, CPU image — see `README-aws.md`)
+
 Production-oriented repo for the DR grading model (EfficientNet-B0, 3-seed
 ensemble, APTOS-2019).  Research notebook lives in the original PyCharm
 folder; this repo is the pipeline.
