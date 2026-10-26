@@ -15,6 +15,8 @@ dependencies = [
     "scikit-learn",
     "opencv-python",
     "pillow",
+    # tracking is a core pipeline step (train/evaluate import dr_pipeline.tracking)
+    "mlflow>=3",
 ]
 
 [project.optional-dependencies]
