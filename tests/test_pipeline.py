@@ -24,6 +24,12 @@ from dr_pipeline.data import load_split  # noqa: E402
 def splits():
     if not (C.SPLIT_DIR / "test.csv").exists():
         pytest.skip("gold splits not generated yet")
+    # dataset images (8 GB) are deliberately not in git — probe before load_split
+    # (load_split hard-exits when images are missing, e.g. on CI runners)
+    import pandas as pd
+    probe = pd.read_csv(C.SPLIT_DIR / "train.csv").iloc[0]
+    if not (C.IMG_DIR / f"{probe['id_code']}.png").exists():
+        pytest.skip("dataset images not present (data/raw not linked on this machine)")
     return {s: load_split(s) for s in ("train", "val", "test")}
 
 

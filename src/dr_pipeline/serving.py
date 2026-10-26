@@ -130,9 +130,9 @@ class PredictResponse(BaseModel):
 
 @app.post("/predict", response_model=PredictResponse)
 async def predict(file: UploadFile = File(...)) -> PredictResponse:
-    if _state["model"] is None:
-        raise HTTPException(503, "model not loaded")
-
+    # validate the upload FIRST (cheap, model-independent) so clients get a
+    # precise 4xx even while the model is still loading; 503 only for the
+    # actual inference path.
     t0 = time.time()
     raw = await file.read()
     if len(raw) > 20 * 1024 * 1024:
@@ -148,6 +148,10 @@ async def predict(file: UploadFile = File(...)) -> PredictResponse:
     img = cv2.resize(img, C.IMG_SIZE)
     if img.ndim != 3 or img.shape[2] != 3:
         raise HTTPException(400, "not a color image")
+
+    if _state["model"] is None:
+        raise HTTPException(503, "model not loaded")
+
     x = np.ascontiguousarray(img[:, :, ::-1]).transpose(2, 0, 1)[None]
     x = x.astype(np.float32) / 255.0
     mean = np.array(C.IMAGENET_MEAN, dtype=np.float32)[None, :, None, None]
