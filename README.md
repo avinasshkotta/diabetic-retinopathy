@@ -2,8 +2,13 @@
 
 [![ci-cd](https://github.com/avinasshkotta/diabetic-retinopathy/actions/workflows/ci.yml/badge.svg)](https://github.com/avinasshkotta/diabetic-retinopathy/actions/workflows/ci.yml)
 
-**Live API:** http://54.252.251.126/ · Swagger UI: http://54.252.251.126/docs
-(AWS free-tier t2/t3 micro, Docker, CPU image — see `README-aws.md`)
+**Live API:** http://dr-grading.duckdns.org/ · Swagger UI: http://dr-grading.duckdns.org/docs
+
+> The URL is a free dynamic-DNS record the instance updates itself (with its
+> current public IP) at every boot and every 15 min (`scripts/add-dynamic-url.sh`
+> → systemd `duckdns.service`/`duckdns.timer`). It survives stop/starts, where a
+> raw public IP would die. `$0` — no Elastic IP needed.
+> AWS free-tier t2/t3 micro, Docker, CPU image — see `README-aws.md`.
 
 📖 **New here? Read [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md)** — the whole
 process start to finish: architecture, every stage, the two core flows

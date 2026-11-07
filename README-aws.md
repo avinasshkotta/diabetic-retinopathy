@@ -21,6 +21,21 @@ public URL in your own AWS account.
 > and stop the instance when not demoing — 750 hrs ≈ 31 days, you only get
 > that if it runs 24/7 for one month. Stopping = $0 always (storage still free).
 
+> **Permanent free URL:** every stop/start gives the instance a NEW public IP,
+> so raw `http://<ip>/` links die on restart. The instance therefore updates a
+> free dynamic-DNS record (`dr-grading.duckdns.org`) with its current IP at every
+> boot + every 15 min — installed via `scripts/add-dynamic-url.sh` (systemd
+> `duckdns.service` / `duckdns.timer`). Share **http://dr-grading.duckdns.org/docs**,
+> never the raw IP. To rebuild this from scratch on a fresh instance:
+>
+> ```bash
+> scp scripts/add-dynamic-url.sh ec2-user@<ip>:
+> ssh ec2-user@<ip> "sudo bash add-dynamic-url.sh <domain> <duckdns-token>; rm add-dynamic-url.sh"
+> ```
+>
+> Local helper: `scripts/live-url.ps1` prints the current URL on demand
+> (needs one-time `winget install Amazon.AWSCLI` + `aws configure`, read-only key).
+
 ## 2. Build the CPU image locally (once)
 
 ```powershell

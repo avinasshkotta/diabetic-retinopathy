@@ -4,7 +4,9 @@ Everything in this repo, start to finish, in the order it was built — so you c
 understand *and explain* the system end to end.
 
 **Live artifacts:**
-- API: **http://54.252.251.126/** · interactive demo: **http://54.252.251.126/docs**
+- API: **http://dr-grading.duckdns.org/** · interactive demo: **http://dr-grading.duckdns.org/docs**
+  *(the instance re-points this free dynamic-DNS name to its current public IP at
+  every boot + every 15 min — the URL survives stop/starts; raw IPs do not)*
 - Repo/CI: **https://github.com/avinasshkotta/diabetic-retinopathy** (green badge = pipeline healthy)
 
 ---
@@ -216,7 +218,9 @@ wait for SSH → install Docker → scp the 577 MB image tar → docker load
 → run container on port 80 → poll /ready → health + ready checks
 ```
 
-**Result: http://54.252.251.126/ — real inference, 770 ms server-side.**
+**Result: http://dr-grading.duckdns.org/ — real inference, ~520 ms server-side
+(public IP changes on restarts; the dynamic-DNS record follows it automatically
+via `scripts/add-dynamic-url.sh` + systemd `duckdns.service`/`duckdns.timer`).**
 
 Production realities discovered the hard way (each one a good interview story):
 
@@ -315,7 +319,7 @@ audit log + live data
 2. Open **the repo**: "CI is green — tests, an eval gate, and a Docker build
    run on every push. The eval gate *blocks* deployment if quality drops below
    the agreed thresholds." *(show Actions tab)*
-3. Open **http://54.252.251.126/docs** → `POST /predict` → *Try it out* →
+3. Open **http://dr-grading.duckdns.org/docs** → `POST /predict` → *Try it out* →
    upload a fundus photo → Execute.
 4. Walk the response: `grade 2, probs[...] , referable_score 0.87 ≥ 0.3537 →
    referable: true, abstain: false` — *"it answers, or explicitly abstains to
@@ -379,4 +383,4 @@ scripts/         deploy-ec2.ps1 (SSH → Docker → image → health check)
 | Evidently drift | `monitor.py` | drift report generated |
 | HITL gate | `abstain` in `/predict` + review routing | low-confidence → `abstain: true` |
 | Retrain trigger | `retrain.py` | `RETRAIN: NO — all quiet` (and fires on drift) |
-| **Live** | **http://54.252.251.126/** | **health/ready/predict verified from the internet** |
+| **Live** | **http://dr-grading.duckdns.org/** | **health/ready/predict verified from the internet** |
