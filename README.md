@@ -2,13 +2,13 @@
 
 [![ci-cd](https://github.com/avinasshkotta/diabetic-retinopathy/actions/workflows/ci.yml/badge.svg)](https://github.com/avinasshkotta/diabetic-retinopathy/actions/workflows/ci.yml)
 
-**Live API:** http://dr-grading.duckdns.org/ · Swagger UI: http://dr-grading.duckdns.org/docs
+**Live API:** https://diabetic-retinopathy.proudgrass-320c667e.centralindia.azurecontainerapps.io/ · Swagger UI: https://diabetic-retinopathy.proudgrass-320c667e.centralindia.azurecontainerapps.io/docs
 
-> The URL is a free dynamic-DNS record the instance updates itself (with its
-> current public IP) at every boot and every 15 min (`scripts/add-dynamic-url.sh`
-> → systemd `duckdns.service`/`duckdns.timer`). It survives stop/starts, where a
-> raw public IP would die. `$0` — no Elastic IP needed.
-> AWS free-tier t2/t3 micro, Docker, CPU image — see `README-aws.md`.
+> Azure Container Apps (Central India), 1 vCPU / 2 GiB, scale-to-zero, serving the
+> 3-seed ensemble (`DR_SEEDS=42,123,777`). GitHub Actions builds `Dockerfile.cpu`,
+> pushes to GHCR and updates the revision on every push to `main` — only after the
+> eval gate passes. `$0` at demo traffic (monthly free grant); cold start ~20 s.
+> The previous AWS EC2 + DuckDNS setup is archived in `legacy/aws/`.
 
 📖 **New here? Read [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md)** — the whole
 process start to finish: architecture, every stage, the two core flows
@@ -64,8 +64,8 @@ pytest tests -q
 - [x] MLflow model registry (`dr-effnetb0`, gated `production` alias)
 - [x] FastAPI endpoint (`/health /ready /model /predict`)
 - [x] Docker container (multi-stage, non-root, healthcheck)
-- [x] GitHub Actions CI/CD (test → eval-gate → image → staging → manual prod)
-- [x] AWS ECS (task definition + `scripts/deploy.ps1`; canary via service rollout)
+- [x] GitHub Actions CI/CD (test → eval-gate → image → Azure Container Apps)
+- [x] Azure Container Apps deployment (scale-to-zero, OIDC, health-gated rollout; the earlier AWS ECS/EC2 path is archived in `legacy/aws/`)
 - [x] Evidently drift monitor + HITL gate (`monitor.py`, abstain routing)
 - [x] Retrain trigger (`retrain.py`: drift / reviewed-labels / schedule)
 

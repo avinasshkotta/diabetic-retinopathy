@@ -4,9 +4,10 @@ Everything in this repo, start to finish, in the order it was built — so you c
 understand *and explain* the system end to end.
 
 **Live artifacts:**
-- API: **http://dr-grading.duckdns.org/** · interactive demo: **http://dr-grading.duckdns.org/docs**
-  *(the instance re-points this free dynamic-DNS name to its current public IP at
-  every boot + every 15 min — the URL survives stop/starts; raw IPs do not)*
+- API: **https://diabetic-retinopathy.proudgrass-320c667e.centralindia.azurecontainerapps.io/**
+  · interactive demo: **.../docs**
+  *(Azure Container Apps, scale-to-zero; GitHub Actions deploys after the eval gate.
+  The AWS EC2 + DuckDNS steps later in this document are historical — see `legacy/aws/`.)*
 - Repo/CI: **https://github.com/avinasshkotta/diabetic-retinopathy** (green badge = pipeline healthy)
 
 ---

@@ -6,6 +6,11 @@ data/raw/**
 
 # --- trained weights (16 MB each; artifact storage comes in Step 2) ---
 models/*.pt
+# Deployment checkpoints are committed so a clean checkout can build the image
+# (Dockerfile.cpu does COPY models/ and the service loads these three seeds).
+!models/dr_efficientnetb0_seed42.pt
+!models/dr_efficientnetb0_seed123.pt
+!models/dr_efficientnetb0_seed777.pt
 
 # --- generated (regenerable) ---
 # NOTE: data/gold/splits is deliberately NOT ignored — the frozen split
