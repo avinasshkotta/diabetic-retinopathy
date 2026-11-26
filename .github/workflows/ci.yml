@@ -1,4 +1,4 @@
-﻿# MLOps CI/CD â€” gates deployment on the eval gate, never the other way round.
+# MLOps CI/CD â€” gates deployment on the eval gate, never the other way round.
 #
 #   test â”€â”€> train+eval-gate â”€â”€> docker-build â”€â”€> deploy-staging â”€â”€> (manual) prod
 #
