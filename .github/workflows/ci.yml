@@ -11,6 +11,9 @@ name: ci-cd
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
   pull_request:
   workflow_dispatch:          # manual prod deploy gate
     inputs:

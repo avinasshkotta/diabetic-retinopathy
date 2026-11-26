@@ -40,4 +40,5 @@ Thumbs.db
 *.pem
 dr-api-cpu.tar
 
-data/gold/predictions.csv   # runtime prediction log, not source
+# runtime prediction log, not source
+data/gold/predictions.csv
