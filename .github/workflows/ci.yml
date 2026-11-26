@@ -1,6 +1,6 @@
-# MLOps CI/CD — gates deployment on the eval gate, never the other way round.
+﻿# MLOps CI/CD â€” gates deployment on the eval gate, never the other way round.
 #
-#   test ──> train+eval-gate ──> docker-build ──> deploy-staging ──> (manual) prod
+#   test â”€â”€> train+eval-gate â”€â”€> docker-build â”€â”€> deploy-staging â”€â”€> (manual) prod
 #
 # Requires repo secrets (set in GitHub settings):
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   (OIDC, no secret)
@@ -57,7 +57,7 @@ jobs:
           if [ -n "$MLFLOW_TRACKING_URI" ] && [ -f models/dr_efficientnetb0_seed42.pt ]; then
             PYTHONPATH=src python -m dr_pipeline.evaluate --ensemble --gate
           else
-            echo "no remote server/checkpoints in CI context — gate ran in tests"
+            echo "no remote server/checkpoints in CI context â€” gate ran in tests"
             PYTHONPATH=src python -m pytest tests/test_pipeline.py -q -k gate
           fi
 
@@ -83,8 +83,8 @@ jobs:
           file: Dockerfile.cpu       # the image we actually deploy (CPU, 2.5 GB)
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/dr-api:${{ steps.meta.outputs.tag }}
-            ghcr.io/${{ github.repository }}/dr-api:latest
+            ghcr.io/${{ github.repository_owner }}/dr-api:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/dr-api:latest
 
   # ------------------------------------------------------- deploy (Azure)
   # Runs only after the eval gate and the image build, and only for main.
@@ -124,7 +124,7 @@ jobs:
         with:
           inlineScript: |
             az containerapp update -n "$CONTAINER_APP" -g "$RESOURCE_GROUP" \
-              --image "ghcr.io/${{ github.repository }}/dr-api:${{ needs.docker-build.outputs.tag }}"
+              --image "ghcr.io/${{ github.repository_owner }}/dr-api:${{ needs.docker-build.outputs.tag }}"
 
       - name: Smoke test
         uses: azure/cli@v2
