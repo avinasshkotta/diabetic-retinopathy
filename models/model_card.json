@@ -1,0 +1,38 @@
+{
+  "architecture": "EfficientNet-B0, 3-seed ensemble (soft-voting)",
+  "input": "224×224 RGB fundus, ImageNet mean/std normalisation",
+  "dataset": "APTOS-2019 (2,196 train / 733 held-out test images)",
+  "seeds": [42, 123, 777],
+  "referral_threshold": 0.3537,
+  "threshold_note": "Chosen on validation by Youden's J, frozen before the test set was scored once.",
+  "validation": {
+    "referable_auc": 0.9628,
+    "sensitivity": 0.9530,
+    "specificity": 0.8644,
+    "accuracy_5class": 0.7572,
+    "ensemble_auc_5class": 0.8822,
+    "n_test": 733
+  },
+  "per_grade_auc": {
+    "0": 0.9856,
+    "1": 0.7864,
+    "2": 0.8953,
+    "3": 0.9036,
+    "4": 0.8399
+  },
+  "per_grade_recall": {
+    "0": 0.9668,
+    "1": 0.3919,
+    "2": 0.8250,
+    "3": 0.1282,
+    "4": 0.1186
+  },
+  "grade_scale": [
+    {"grade": 0, "label": "No DR", "meaning": "No visible retinopathy."},
+    {"grade": 1, "label": "Mild", "meaning": "Microaneurysms only; usually monitored, not referred urgently."},
+    {"grade": 2, "label": "Moderate", "meaning": "More than microaneurysms; referable — specialist assessment advised."},
+    {"grade": 3, "label": "Severe", "meaning": "Extensive haemorrhages; referable, higher urgency."},
+    {"grade": 4, "label": "Proliferative", "meaning": "New vessels / vitreous haemorrhage; referable, urgent."}
+  ],
+  "clinical_note": "The clinically actionable output is the binary referral decision (grade ≥ 2), not the exact 5-way grade. Exact severity is advisory and intentionally not used to make the referral call."
+}

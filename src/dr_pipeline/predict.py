@@ -47,13 +47,18 @@ class DREnsemble:
         self.confidence_abstain = confidence_abstain
 
     @torch.no_grad()
-    def predict_proba(self, x: torch.Tensor) -> np.ndarray:
+    def predict_per_seed(self, x: torch.Tensor) -> list[np.ndarray]:
+        """One probability vector per seed checkpoint (for agreement reporting)."""
         out = []
         for m in self.models:
             with torch.autocast("cuda", dtype=torch.float16,
                                 enabled=DEVICE.type == "cuda"):
-                out.append(torch.sigmoid(m(x.to(DEVICE))).float().cpu().numpy())
-        return np.mean(out, axis=0)[0]
+                out.append(torch.sigmoid(m(x.to(DEVICE))).float().cpu().numpy()[0])
+        return out
+
+    @torch.no_grad()
+    def predict_proba(self, x: torch.Tensor) -> np.ndarray:
+        return np.mean(self.predict_per_seed(x), axis=0)
 
     def predict(self, path: str) -> dict:
         probs = self.predict_proba(preprocess(path))

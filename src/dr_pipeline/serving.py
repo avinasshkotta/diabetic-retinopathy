@@ -16,6 +16,7 @@ Model source (in order of precedence):
 from __future__ import annotations
 
 import io
+import json
 import os
 import time
 
@@ -55,6 +56,18 @@ app = FastAPI(
 # model loading (once, at startup)
 # --------------------------------------------------------------------------
 _state = {"model": None, "source": None, "loaded_at": None}
+
+# Validation evidence surfaced by /model and the landing page. Lives in models/
+# so it ships in the image (reports/ is dockerignored).
+try:
+    MODEL_CARD = json.loads((C.MODELS_DIR / "model_card.json").read_text(encoding="utf-8"))
+except Exception:
+    MODEL_CARD = {}
+
+GRADE_LABELS = ["No DR", "Mild", "Moderate", "Severe", "Proliferative"]
+GRADE_MEANINGS = {g["grade"]: g["meaning"]
+                  for g in MODEL_CARD.get("grade_scale", [])
+                  if "grade" in g} or {i: "" for i in range(5)}
 
 
 class RegistryEnsemble:
@@ -97,6 +110,12 @@ class LocalEnsemble:
             [self.inner.predict_proba(torch.from_numpy(xi[None]))
              for xi in x])
 
+    def predict_probs_per_seed(self, x: np.ndarray) -> list[list[float]]:
+        """Per-seed probability vectors for one image, for agreement reporting."""
+        import torch
+        return [[float(p) for p in vec]
+                for vec in self.inner.predict_per_seed(torch.from_numpy(x))]
+
 
 def _load_model() -> None:
     uri = os.environ.get("MODEL_URI")
@@ -138,9 +157,9 @@ def ready() -> dict:
 
 @app.get("/model")
 def model_info() -> dict:
-    """Which model/source is serving and which referral threshold it uses."""
+    """Which model/source is serving, which threshold, and the validation card."""
     return {"source": _state["source"], "loaded_at": _state["loaded_at"],
-            "threshold": C.THRESHOLD_REFERABLE}
+            "threshold": C.THRESHOLD_REFERABLE, "card": MODEL_CARD}
 
 
 # --------------------------------------------------------------------------
@@ -205,6 +224,19 @@ _LANDING_HTML = """<!DOCTYPE html>
        border-radius:10px;display:none;margin-top:12px;font-size:13.5px}
   footer{color:var(--muted);font-size:12px;margin-top:26px;line-height:1.5}
   footer a{color:var(--accent)}
+  h2{font-size:15px;margin:0 0 10px}
+  .sub2{color:var(--muted);font-size:12.5px;margin:6px 0 10px;line-height:1.5}
+  ul.why{margin:0 0 12px 18px;padding:0;font-size:13.5px}
+  ul.why li{margin:4px 0}
+  table.val{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.val th,table.val td{border-bottom:1px solid #24344e;padding:7px 8px;text-align:left;vertical-align:top}
+  table.val th{color:var(--muted);font-weight:600}
+  table.val td:nth-child(2){color:var(--ok);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .seedrow{display:grid;grid-template-columns:70px 1fr 84px;gap:10px;align-items:center;
+           font-size:12.5px;margin:5px 0}
+  .seedrow .track{height:8px}
+  details{margin-top:12px}
+  summary{cursor:pointer;color:var(--accent);font-size:12.5px}
 </style></head>
 <body><div class="wrap">
   <header>
@@ -247,6 +279,37 @@ _LANDING_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <div class="card" id="why" style="display:none">
+    <h2>Why this grade</h2>
+    <ul class="why" id="why-list"></ul>
+    <div id="seeds"></div>
+  </div>
+
+  <div class="card">
+    <h2>How this model was validated</h2>
+    <div class="sub2">The clinically actionable output is the <b>binary referral decision</b>
+      (grade ≥ 2), not the exact 5-way grade.</div>
+    <table class="val">
+      <tr><th>Metric</th><th>Value</th><th>What it means</th></tr>
+      <tr><td>Referable AUC</td><td id="v-auc">–</td><td>Ranking quality for "needs referral", held-out test</td></tr>
+      <tr><td>Sensitivity</td><td id="v-sens">–</td><td>Share of truly referable cases that get caught</td></tr>
+      <tr><td>Specificity</td><td id="v-spec">–</td><td>Share of non-referable cases correctly cleared</td></tr>
+      <tr><td>Threshold</td><td id="v-thr">–</td><td>Frozen on validation (Youden's J); test scored once</td></tr>
+      <tr><td>5-class accuracy</td><td id="v-acc">–</td><td>Exact grade agreement — advisory only</td></tr>
+    </table>
+    <details>
+      <summary>Per-grade recall — the honest breakdown</summary>
+      <table class="val" style="margin-top:8px">
+        <tr><th>Grade</th><th>Recall</th><th>Reading</th></tr>
+        <tbody id="v-grades"></tbody>
+      </table>
+      <div class="sub2">Mild, severe and proliferative grades are often confused with their
+        neighbours. That is precisely why referral is decided by the binary score rather than
+        the exact grade — and why the service abstains below 0.55 confidence.</div>
+    </details>
+    <div class="sub2" id="v-src"></div>
+  </div>
+
   <footer>
     <b>Screening aid only — not a diagnosis.</b> Grade names: 0 No DR · 1 Mild · 2 Moderate ·
     3 Severe · 4 Proliferative. <code>referable</code> = referable_score ≥ 0.3537 (frozen
@@ -266,9 +329,26 @@ fetch("/ready").then(r => r.ok ? r.json() : {ready:false}).then(d => {
   if (d.ready) { c.classList.add("ok"); c.innerHTML = "<b>ready</b> · " + (d.model||""); }
   else { c.classList.add("down"); c.textContent = "not ready"; }
 });
+const pct1 = x => (x == null ? "–" : (x * 100).toFixed(1) + "%");
 fetch("/model").then(r => r.json()).then(d => {
-  $("chip-model").innerHTML = "<b>threshold</b> " + d.threshold + " · " + (d.source||"");
-});
+  $("chip-model").innerHTML = "<b>threshold</b> " + d.threshold + " · " + (d.source || "");
+  const c = d.card || {}, v = c.validation || {}, rec = c.per_grade_recall || {};
+  if (c.architecture) {
+    $("v-src").textContent = c.architecture + " · " + (c.dataset || "") + " · input " + (c.input || "");
+  }
+  $("v-auc").textContent = v.referable_auc != null ? v.referable_auc.toFixed(3) : "–";
+  $("v-sens").textContent = pct1(v.sensitivity);
+  $("v-spec").textContent = pct1(v.specificity);
+  $("v-thr").textContent = d.threshold != null ? d.threshold : "–";
+  $("v-acc").textContent = pct1(v.accuracy_5class);
+  const tb = $("v-grades"); tb.innerHTML = "";
+  Object.keys(rec).forEach(g => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>" + g + " " + GRADES[g] + "</td><td>" + pct1(rec[g]) + "</td><td>" +
+      (rec[g] < 0.5 ? "often confused with neighbouring grades" : "reliable") + "</td>";
+    tb.appendChild(tr);
+  });
+}).catch(() => {});
 fetch("/health").catch(() => {
   const c = $("chip-ready"); c.classList.add("down"); c.textContent = "service down";
 });
@@ -320,7 +400,10 @@ function render(d){
 
   $("graden").textContent = d.grade;
   $("graden").style.background = COLORS[d.grade]; $("graden").style.color = "#04121f";
-  $("gradename").textContent = d.grade + " — " + GRADES[d.grade];
+  $("gradename").textContent = d.grade + " — " + (d.grade_label || GRADES[d.grade]);
+  if (d.grade_description) {
+    $("gradename").textContent += " · " + d.grade_description;
+  }
   $("conf").textContent = Math.round(d.confidence * 100) + "% confident";
 
   const bars = $("bars"); bars.innerHTML = "";
@@ -338,6 +421,27 @@ function render(d){
   $("latency").textContent = "inference: " + d.latency_ms + " ms";
   $("refscore").textContent = "referable score: " + d.referable_score;
   $("modelinfo").textContent = "model: " + d.model;
+
+  // "Why this grade": ensemble agreement, margin, threshold, abstain reason.
+  $("why").style.display = "block";
+  const list = $("why-list"); list.innerHTML = "";
+  (d.explanation || []).forEach(t => {
+    const li = document.createElement("li"); li.textContent = t; list.appendChild(li);
+  });
+  const seeds = $("seeds"); seeds.innerHTML = "";
+  const sp = d.seed_probs || [];
+  if (!sp.length) {
+    seeds.innerHTML = "<div class='sub2'>Per-seed detail unavailable for registry models.</div>";
+  }
+  sp.forEach((s, i) => {
+    const top = Math.max.apply(null, s), gi = s.indexOf(top);
+    const row = document.createElement("div"); row.className = "seedrow";
+    row.innerHTML = "<span>seed " + i + "</span>" +
+      "<div class='track'><div class='fill' style='width:" + (top * 100) +
+      "%;background:" + COLORS[gi] + "'></div></div>" +
+      "<span class='pct'>g" + gi + " · " + Math.round(top * 100) + "%</span>";
+    seeds.appendChild(row);
+  });
 }
 </script></body></html>"""
 
@@ -495,6 +599,15 @@ class PredictResponse(BaseModel):
                                       "review (HITL) instead of an answer")
     model: str = Field(description="Which model / registry version answered")
     latency_ms: float = Field(description="Server-side inference time")
+    grade_label: str = Field(default="", description="Human label for the grade")
+    grade_description: str = Field(default="", description="One-line clinical meaning")
+    margin: float = Field(default=0.0, description="Top-1 minus top-2 probability")
+    seed_probs: list[list[float]] = Field(default_factory=list,
+                                          description="Per-seed probability vectors")
+    agreement: float | None = Field(default=None,
+                                    description="Share of seeds whose argmax matches the ensemble grade")
+    explanation: list[str] = Field(default_factory=list,
+                                   description="Plain-language reasons for this decision")
 
 
 @app.post("/predict", response_model=PredictResponse)
@@ -538,6 +651,44 @@ async def predict(file: UploadFile = File(...)) -> PredictResponse:
     confidence = float(probs.max())
     ref_score = float(1 - probs[0] - probs[1])
     abstain = confidence < 0.55
+    referable = ref_score >= C.THRESHOLD_REFERABLE
+
+    # Per-seed evidence. The registry path has one model, so this is best-effort.
+    seed_probs: list[list[float]] = []
+    try:
+        seed_probs = _state["model"].predict_probs_per_seed(x)
+    except Exception:
+        seed_probs = []
+
+    agreement = None
+    if seed_probs:
+        agreeing = sum(1 for s in seed_probs if int(np.argmax(s)) == grade)
+        agreement = round(agreeing / len(seed_probs), 3)
+
+    ordered = sorted((float(p) for p in probs), reverse=True)
+    margin = round(ordered[0] - ordered[1], 4)
+
+    explanation = []
+    if seed_probs and agreement is not None:
+        explanation.append(
+            f"{int(round(agreement * len(seed_probs)))} of {len(seed_probs)} seed models "
+            f"predict grade {grade} ({GRADE_LABELS[grade]}).")
+    explanation.append(
+        f"Top probability {ordered[0]:.2f} vs next {ordered[1]:.2f} — margin {margin:.2f}.")
+    explanation.append(
+        (f"Referable score {ref_score:.2f} ≥ threshold {C.THRESHOLD_REFERABLE}: "
+         "specialist referral recommended.")
+        if referable else
+        (f"Referable score {ref_score:.2f} < threshold {C.THRESHOLD_REFERABLE}: "
+         "no referral at this threshold."))
+    if abstain:
+        explanation.append(
+            f"Confidence {confidence:.2f} is below 0.55, so the case is routed to human "
+            "review instead of being answered.")
+    if seed_probs:
+        spread = float(np.std(seed_probs, axis=0).max())
+        explanation.append(
+            f"Largest disagreement across seeds {spread:.2f} (0 = all seeds identical).")
 
     # audit + drift log: image hash only, never the image itself
     try:
@@ -557,11 +708,17 @@ async def predict(file: UploadFile = File(...)) -> PredictResponse:
         grade=grade,
         confidence=round(confidence, 4),
         probs=[round(float(p), 4) for p in probs],
-        referable=ref_score >= C.THRESHOLD_REFERABLE,
+        referable=referable,
         referable_score=round(ref_score, 4),
         threshold=C.THRESHOLD_REFERABLE,
         # low confidence -> service asks for human review instead of answering
         abstain=abstain,
         model=_state["source"],
         latency_ms=round((time.time() - t0) * 1000, 1),
+        grade_label=GRADE_LABELS[grade],
+        grade_description=GRADE_MEANINGS.get(grade, ""),
+        margin=margin,
+        seed_probs=[[round(float(p), 4) for p in s] for s in seed_probs],
+        agreement=agreement,
+        explanation=explanation,
     )
