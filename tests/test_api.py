@@ -22,6 +22,21 @@ def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
 
 
+def test_landing_page(client):
+    """The interactive demo page: 200 + branded content + docs.css link works."""
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Diabetic Retinopathy" in r.text
+    assert "/predict" in r.text          # the page grades via POST /predict
+    assert r.headers["content-type"].startswith("text/html")
+    css = client.get("/docs.css")
+    assert css.status_code == 200
+    assert "text/css" in css.headers["content-type"]
+    docs = client.get("/docs")
+    assert docs.status_code == 200
+    assert "/docs.css" in docs.text      # Swagger re-brand wired in
+
+
 def test_ready_reports_model(client):
     r = client.get("/ready")
     if r.status_code == 503:
