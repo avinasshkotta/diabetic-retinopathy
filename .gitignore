@@ -39,3 +39,5 @@ Thumbs.db
 # --- deploy secrets/artifacts (never commit) ---
 *.pem
 dr-api-cpu.tar
+
+data/gold/predictions.csv   # runtime prediction log, not source
