@@ -48,6 +48,29 @@ python -m dr_pipeline.predict path/to/fundus.png
 pytest tests -q
 ```
 
+## Explainability (what makes a prediction reviewable)
+
+The API returns evidence, not just a label:
+
+| Field | Meaning |
+|---|---|
+| `probs`, `confidence` | ensemble probability per grade, and the top one |
+| `seed_probs` | one probability vector per seed checkpoint |
+| `agreement` | share of seeds whose argmax matches the ensemble grade |
+| `margin` | top-1 minus top-2 probability |
+| `grade_label`, `grade_description` | human label + clinical meaning |
+| `explanation[]` | plain-language reasons for this decision |
+| `referable`, `referable_score`, `threshold` | binary referral decision at the frozen cutoff |
+| `abstain` | confidence < 0.55 → routed to human review |
+
+`GET /model` serves the model card (`models/model_card.json`): referable AUC **0.963**,
+sensitivity **95.3%**, specificity **86.4%** on 733 held-out images, plus per-grade recall.
+
+The landing page renders the same evidence — a "Why this grade" panel (agreement, margin,
+threshold, per-seed bars) and a validation table. It also shows the honest per-grade recall
+(grade 3 is 12.8%), because the clinical argument is the **binary referral decision**, not
+exact 5-way grading.
+
 ## Eval gate (CI blocks promotion below these)
 
 | metric | required | measured |

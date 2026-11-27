@@ -125,8 +125,14 @@ and `promote.py` **refuses** to promote a run that was never evaluated.
 |---|---|
 | `GET /health` | liveness — process is up (never depends on model) |
 | `GET /ready` | readiness — model loaded; **503** while loading/failed |
-| `GET /model` | which model/version + which threshold is serving |
-| `POST /predict` | upload fundus photo → grade, probs, referral, abstain |
+| `GET /model` | model/version, threshold, and the full model card |
+| `POST /predict` | upload fundus photo → grade, probs, referral, abstain, **evidence** |
+
+**Explainability (added later):** every response carries `seed_probs`, `agreement`,
+`margin`, `grade_label`, `grade_description` and a plain-language `explanation[]`; the
+landing page turns them into a "Why this grade" panel plus a validation table
+(referable AUC 0.963, sensitivity 95.3%, specificity 86.4%, n=733) and the honest
+per-grade recall. The 5-way grade is advisory; the referral decision is the product.
 
 Design points worth explaining:
 
